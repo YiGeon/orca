@@ -59,7 +59,7 @@ export function useCombinedDiffSectionRevalidation({
     ) {
       return
     }
-    for (const index of loadedIndicesRef.current) {
+    for (const index of new Set([...loadedIndicesRef.current, ...loadingIndicesRef.current])) {
       const path = sectionEntries[index]?.path
       if (
         path !== undefined &&
@@ -68,7 +68,7 @@ export function useCombinedDiffSectionRevalidation({
         requestSectionReload(index)
       }
     }
-  }, [loadedIndicesRef, requestSectionReload, sectionEntries, statusSnapshot])
+  }, [loadedIndicesRef, loadingIndicesRef, requestSectionReload, sectionEntries, statusSnapshot])
 
   useEffect(() => {
     if (treeMode !== 'all' && treeMode !== 'uncommitted') {

@@ -20,6 +20,7 @@ import type { CombinedDiffSectionLoadRegistry } from './combined-diff-section-lo
 export function useCombinedDiffSectionLoader({
   entrySet,
   file,
+  generation,
   registry,
   sectionCount,
   setSectionHeights,
@@ -27,6 +28,7 @@ export function useCombinedDiffSectionLoader({
 }: {
   entrySet: CombinedDiffEntrySet
   file: OpenFile
+  generation: number
   registry: CombinedDiffSectionLoadRegistry
   sectionCount: number
   setSectionHeights: React.Dispatch<React.SetStateAction<Record<number, number>>>
@@ -155,6 +157,8 @@ export function useCombinedDiffSectionLoader({
           modifiedContent: storedContent.modifiedContent
         })
       ) {
+        // Persist the newly loaded index even when the body and its model stay unchanged.
+        setSections((prev) => [...prev])
         return
       }
       if (wasShowingContent) {
@@ -191,6 +195,7 @@ export function useCombinedDiffSectionLoader({
       commitEntries,
       file.filePath,
       file.runtimeEnvironmentId,
+      file.worktreeId,
       isAllMode,
       isBranchMode,
       isCommitMode,
@@ -246,7 +251,7 @@ export function useCombinedDiffSectionLoader({
         loadSection(index)
       }
     }
-  }, [entrySignature, loadSection, loadedIndicesRef, sectionCount, sectionsRef])
+  }, [entrySignature, generation, loadSection, loadedIndicesRef, sectionCount, sectionsRef])
 
   return { loadSection, loadDeferredSection }
 }
