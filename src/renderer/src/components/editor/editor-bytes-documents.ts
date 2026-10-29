@@ -13,19 +13,9 @@ import {
 } from './editor-self-write-registry'
 import { markEditorSaveRefusal } from './editor-save-rebaseline'
 import { EditorSaveDiscardedError } from './editor-discard-epoch'
+import { editorBufferSiblingViewIds } from '@/store/slices/editor/buffers/editor-buffer-views'
+import { bytesDocumentBoxes } from './editor-bytes-document-boxes'
 
-/**
- * A binary custom editor's document per tab: the bytes last read or saved, and the unsaved edit.
- * Kept here, not in the text drafts, so a text save can never write them as text. Unsaved bytes
- * live only while the tab is dirty and open; they are not kept across restarts.
- */
-type BytesDocument = {
-  saved: CustomEditorBinaryDocument
-  savedSha256: string
-  draft: CustomEditorBinaryDocument | null
-}
-
-const documents = new Map<string, BytesDocument>()
 const listeners = new Set<() => void>()
 let unsubscribeStore: (() => void) | null = null
 
@@ -38,17 +28,17 @@ function notify(): void {
 /** Drops a draft once its tab is clean (saved, reverted, discarded) and the entry once it closes. */
 function dropSettledDrafts(state: AppState): void {
   let changed = false
-  for (const [fileId, document] of documents) {
+  for (const [fileId, box] of bytesDocumentBoxes) {
     const tab = state.openFiles.find((file) => file.id === fileId)
     if (!tab) {
-      documents.delete(fileId)
+      bytesDocumentBoxes.delete(fileId)
       changed = true
-    } else if (document.draft && !tab.isDirty) {
-      documents.set(fileId, { ...document, draft: null })
+    } else if (box.current.draft && !tab.isDirty) {
+      box.current = { ...box.current, draft: null }
       changed = true
     }
   }
-  if (documents.size === 0) {
+  if (bytesDocumentBoxes.size === 0) {
     unsubscribeStore?.()
     unsubscribeStore = null
   }
@@ -69,7 +59,7 @@ export function subscribeEditorBytes(listener: () => void): () => void {
 
 /** The document the editor shows: the unsaved edit, else the bytes on disk. */
 export function editorBytesDocument(fileId: string): CustomEditorBinaryDocument | null {
-  const document = documents.get(fileId)
+  const document = bytesDocumentBoxes.get(fileId)?.current
   return document ? (document.draft ?? document.saved) : null
 }
 
@@ -79,26 +69,30 @@ export function loadEditorBytes(
   saved: CustomEditorBinaryDocument,
   savedSha256: string
 ): void {
-  const existing = documents.get(fileId)
   unsubscribeStore ??= useAppStore.subscribe(dropSettledDrafts)
+  const siblings = editorBufferSiblingViewIds(useAppStore.getState(), fileId)
+  const box =
+    bytesDocumentBoxes.get(fileId) ?? siblings.map((id) => bytesDocumentBoxes.get(id)).find(Boolean)
+  const existing = box?.current
   // Why keep the draft's baseline: a later read must not vouch for bytes the edit never saw.
   // Why keep unchanged bytes: a new object resends the document, so an edit in flight conflicts.
-  if (
+  const keep =
     existing?.draft ||
     (existing?.savedSha256 === savedSha256 && existing.saved.fileType === saved.fileType)
-  ) {
-    return
+  const current = keep && existing ? existing : { saved, savedSha256, draft: null }
+  if (box) {
+    box.current = current
   }
-  documents.set(fileId, { saved, savedSha256, draft: null })
+  bytesDocumentBoxes.set(fileId, box ?? { current })
   notify()
 }
 
 export function setEditorBytesDraft(fileId: string, draft: CustomEditorBinaryDocument): void {
-  const document = documents.get(fileId)
-  if (!document) {
+  const box = bytesDocumentBoxes.get(fileId)
+  if (!box) {
     return
   }
-  documents.set(fileId, { ...document, draft })
+  box.current = { ...box.current, draft }
   useAppStore.getState().markFileDirty(fileId, true)
   notify()
 }
@@ -118,14 +112,14 @@ export function releaseEditorBytes(fileId: string): void {
     return
   }
   mountedViews.delete(fileId)
-  if (documents.get(fileId)?.draft === null) {
-    documents.delete(fileId)
+  if (bytesDocumentBoxes.get(fileId)?.current.draft === null) {
+    bytesDocumentBoxes.delete(fileId)
     notify()
   }
 }
 
 export function hasEditorBytesDraft(fileId: string): boolean {
-  return Boolean(documents.get(fileId)?.draft)
+  return Boolean(bytesDocumentBoxes.get(fileId)?.current.draft)
 }
 
 /** Writes the tab's unsaved bytes, guarded by the hash of the bytes the edit started from. */
@@ -137,9 +131,10 @@ export async function saveEditorBytesDraft(
   /** A Don't Save since the request; checked at the last moment before the write. */
   discarded: () => boolean
 ): Promise<EditorSaveResult> {
-  const document = documents.get(file.id)
+  const box = bytesDocumentBoxes.get(file.id)
+  const document = box?.current
   const draft = document?.draft
-  if (!document || !draft) {
+  if (!box || !document || !draft) {
     return 'written'
   }
   const remote = Boolean(context.connectionId || file.runtimeEnvironmentId?.trim())
@@ -179,11 +174,10 @@ export async function saveEditorBytesDraft(
     return 'blocked-stale'
   }
   const savedSha256 = await sha256Hex(draft.bytes)
-  const current = documents.get(file.id)
-  if (current) {
+  if (bytesDocumentBoxes.get(file.id) === box) {
     // An edit made while the write ran stays unsaved, now against the bytes just written.
-    const newer = current.draft !== draft ? current.draft : null
-    documents.set(file.id, { saved: draft, savedSha256, draft: newer })
+    const newer = box.current.draft !== draft ? box.current.draft : null
+    box.current = { saved: draft, savedSha256, draft: newer }
     const state = getState()
     state.markFileDirty(file.id, newer !== null, { written: true })
     if (state.openFiles.find((tab) => tab.id === file.id)?.externalMutation) {

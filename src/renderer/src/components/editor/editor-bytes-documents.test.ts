@@ -8,8 +8,12 @@ const state = vi.hoisted(() => {
     { id: 'book', isDirty: false }
   ]
   const tab = (id: string) => openFiles.find((file) => file.id === id)
+  const editorBufferIdOf: Record<string, string> = {}
+  const editorBufferViews: Record<string, string[]> = {}
   return {
     openFiles,
+    editorBufferIdOf,
+    editorBufferViews,
     markFileDirty: vi.fn((id: string, dirty: boolean) => {
       const found = tab(id)
       if (found) {
@@ -39,6 +43,7 @@ import {
   setEditorBytesDraft,
   sha256Hex
 } from './editor-bytes-documents'
+import { rekeyEditorBytesDocuments } from './editor-bytes-document-boxes'
 
 // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the save reads only openFiles, markFileDirty and setExternalMutation.
 const getState = () => state as unknown as AppState
@@ -129,5 +134,27 @@ describe('binary custom editor reloads', () => {
     loadEditorBytes('book', { bytes: reread, fileType: 'xlsx' }, await sha256Hex(reread))
     // A new object would resend the document and turn the frame's in-flight edit into a conflict.
     expect(editorBytesDocument('book')).toBe(before)
+  })
+})
+
+describe('binary custom editor tabs', () => {
+  it('moves an unsaved edit with its tab when the file is renamed', () => {
+    setEditorBytesDraft('book', edited)
+    rekeyEditorBytesDocuments([{ oldFileId: 'book', newFileId: 'renamed' }])
+    expect(editorBytesDocument('renamed')).toBe(edited)
+    expect(editorBytesDocument('book')).toBeNull()
+    rekeyEditorBytesDocuments([{ oldFileId: 'renamed', newFileId: 'book' }])
+  })
+
+  it('shares one draft between tabs of one file, which share one dirty flag', async () => {
+    state.editorBufferIdOf = { book: 'record', twin: 'record' }
+    state.editorBufferViews = { record: ['book', 'twin'] }
+    state.openFiles.push({ id: 'twin', isDirty: false })
+    loadEditorBytes('twin', { bytes: new Uint8Array(loaded), fileType: 'xlsx' }, hex(loaded))
+    setEditorBytesDraft('twin', edited)
+    expect(editorBytesDocument('book')).toBe(edited)
+    state.openFiles.pop()
+    state.editorBufferIdOf = {}
+    state.editorBufferViews = {}
   })
 })

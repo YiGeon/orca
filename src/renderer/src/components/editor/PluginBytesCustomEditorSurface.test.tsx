@@ -20,6 +20,8 @@ vi.mock('@/runtime/runtime-paged-file-read', () => ({
 const store = vi.hoisted(() => ({
   markFileDirty: vi.fn(),
   openFiles: [{ id: 'book', isDirty: false }],
+  editorBufferIdOf: {},
+  editorBufferViews: {},
   listeners: new Set<(state: unknown) => void>()
 }))
 vi.mock('@/store', () => ({
