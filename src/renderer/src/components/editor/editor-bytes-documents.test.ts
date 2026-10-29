@@ -121,3 +121,13 @@ describe('binary custom editor views', () => {
     })
   })
 })
+
+describe('binary custom editor reloads', () => {
+  it('keeps the same document when a reload reads unchanged bytes', async () => {
+    const before = editorBytesDocument('book')
+    const reread = new Uint8Array(loaded)
+    loadEditorBytes('book', { bytes: reread, fileType: 'xlsx' }, await sha256Hex(reread))
+    // A new object would resend the document and turn the frame's in-flight edit into a conflict.
+    expect(editorBytesDocument('book')).toBe(before)
+  })
+})
