@@ -23,7 +23,7 @@ vi.mock(import('node:os'), async (importOriginal) => {
 })
 
 const bridges = vi.hoisted(() => ({
-  account: vi.fn(async () => {}),
+  account: vi.fn(async (_args: { sourceCodexHomePaths: readonly string[] }) => {}),
   system: vi.fn(async () => {}),
   wsl: vi.fn(async () => {})
 }))
@@ -31,7 +31,8 @@ const bridges = vi.hoisted(() => ({
 // Every lane that links Codex sessions between homes, for one launch each.
 async function launchWith(
   share: boolean | undefined,
-  lane: 'real-home' | 'per-account' | 'shared-mirror'
+  lane: 'real-home' | 'per-account' | 'shared-mirror',
+  codexSessionSourceHome?: { host: string }
 ): Promise<void> {
   vi.doMock('../codex/codex-account-session-bridge', async (importOriginal) => ({
     ...(await importOriginal<object>()),
@@ -62,7 +63,8 @@ async function launchWith(
             activeCodexManagedAccountIdsByRuntime: { host: 'account-1', wsl: {} }
           }
         : {}),
-      ...(share === undefined ? {} : { codexShareHistoryAcrossAccounts: share })
+      ...(share === undefined ? {} : { codexShareHistoryAcrossAccounts: share }),
+      ...(codexSessionSourceHome ? { codexSessionSourceHome } : {})
     })
   )
   const { CodexRuntimeHomeService } = await import('./runtime-home-service')
@@ -150,5 +152,27 @@ describe('the Codex history-sharing opt-out (#24511)', () => {
         Object.defineProperty(process, 'platform', originalPlatform)
       }
     }
+  })
+
+  // E9: a history source inside a distro would be read over 9P, booting a stopped distro.
+  const WSL_SOURCE = { host: '\\\\wsl.localhost\\Ubuntu\\home\\me\\.codex' }
+
+  it('the per-account lane leaves a WSL history source out of its sources', async () => {
+    await launchWith(undefined, 'per-account', WSL_SOURCE)
+    expect(bridges.account).toHaveBeenCalled()
+    for (const [{ sourceCodexHomePaths }] of bridges.account.mock.calls) {
+      expect(sourceCodexHomePaths).not.toContain(WSL_SOURCE.host)
+    }
+  })
+
+  it('the shared-mirror lane starts no bridge from a WSL history source', async () => {
+    await launchWith(undefined, 'shared-mirror', WSL_SOURCE)
+    expect(bridges.system).not.toHaveBeenCalled()
+  })
+
+  it('the shared-mirror lane still bridges from an ordinary custom source', async () => {
+    const host = join(testState.fakeHomeDir, 'custom-codex')
+    await launchWith(undefined, 'shared-mirror', { host })
+    expect(bridges.system).toHaveBeenCalledWith({}, host)
   })
 })

@@ -70,11 +70,13 @@ export abstract class CodexRuntimeHomeLaunch extends CodexRuntimeHomeRouting {
     syncSystemCodexResourcesIntoManagedHome()
     syncSystemConfigIntoManagedCodexHome()
     // Keep large history scans off the launch path.
-    if (isCodexHistorySharedAcrossAccounts(this.store.getSettings())) {
-      void startSystemCodexSessionBridgeInBackground(
-        {},
-        resolveHostCodexSessionSourceHome(this.store.getSettings())
-      )
+    const sourceHome = resolveHostCodexSessionSourceHome(this.store.getSettings())
+    // Reading a distro's history over 9P would boot it (E9); the WSL lane owns those homes.
+    if (
+      isCodexHistorySharedAcrossAccounts(this.store.getSettings()) &&
+      !(sourceHome && parseWslUncPath(sourceHome))
+    ) {
+      void startSystemCodexSessionBridgeInBackground({}, sourceHome)
     }
     return this.getRuntimeHomePath()
   }

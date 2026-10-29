@@ -146,9 +146,12 @@ export abstract class CodexRuntimeHomeManagedHome extends CodexRuntimeHomeSync {
   }
 
   protected getSelfContainedSessionBridgeSourceHomes(): string[] {
+    // Honor custom history sources without changing credential routing.
+    const sourceHome =
+      resolveHostCodexSessionSourceHome(this.store.getSettings()) ?? getSystemCodexHomePath()
     return [
-      // Honor custom history sources without changing credential routing.
-      resolveHostCodexSessionSourceHome(this.store.getSettings()) ?? getSystemCodexHomePath(),
+      // Reading a distro's history over 9P would boot it (E9); the WSL lane owns those homes.
+      ...(parseWslUncPath(sourceHome) ? [] : [sourceHome]),
       // Resolve the mirror path without creating it for per-account launches.
       resolveOrcaManagedCodexHomePath(),
       ...this.getManagedHostAccountHomesForSessionDiscovery()
