@@ -139,6 +139,7 @@ document.getElementById('append').addEventListener('click', () => {
   next[bytes.length] = 0xaa
   bytes = next
   orca.document.applyEdit({ baseVersion: version, content: { kind: 'bytes', bytes: next.slice().buffer } })
+    .then(() => { document.title = 'applied v' + version }, (e) => { document.title = 'refused v' + version + ' ' + e.code + ' ' + e.message })
 })
 </script>`
 
@@ -196,7 +197,14 @@ test('a bytes custom editor edits and saves a binary file', async ({
     expect(await dirty()).toBe(false)
 
     const append = bytesFrame.locator('#append')
+    orcaPage.on('console', (m) => console.log('[diag console]', m.type(), m.text().slice(0, 300)))
     await append.click()
+    await orcaPage.waitForTimeout(1500)
+    const diagFrame = orcaPage.frames().find((f) => f.name().includes('editor:'))
+    console.log('[diag] frame title', await diagFrame?.title(), 'summary', await summary.textContent())
+    console.log('[diag] frames', orcaPage.frames().map((f) => f.name().slice(0, 40)).join(' | '))
+    console.log('[diag] tab', await orcaPage.evaluate((name) => JSON.stringify(window.__store?.getState().openFiles.filter((f) => f.relativePath === name).map((f) => ({ id: f.id, dirty: f.isDirty, ro: f.readOnly, ext: f.externalMutation, preview: f.isPreview, mode: f.mode }))), BYTES_FILE))
+    console.log('[diag] iframes', await orcaPage.locator('iframe').count())
     await expect.poll(dirty).toBe(true)
     await append.press(process.platform === 'darwin' ? 'Meta+s' : 'Control+s')
     const edited = Buffer.concat([original, Buffer.from([0xaa])])
