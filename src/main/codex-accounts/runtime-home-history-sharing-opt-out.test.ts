@@ -175,4 +175,20 @@ describe('the Codex history-sharing opt-out (#24511)', () => {
     await launchWith(undefined, 'shared-mirror', { host })
     expect(bridges.system).toHaveBeenCalledWith({}, host)
   })
+
+  it.each([
+    ['a WSL history source', WSL_SOURCE.host, false],
+    ['an ordinary custom source', '/custom/codex', true]
+  ])('the system-default migration scan with %s is eligible: %s', async (_name, host, eligible) => {
+    // Shell startup files are read from HOME; keep the developer's own CODEX_HOME out of it.
+    vi.stubEnv('HOME', testState.fakeHomeDir)
+    const store = createStore(
+      createSettings({ realHomeRoutable: true, codexSessionSourceHome: { host } })
+    )
+    const { CodexRuntimeHomeService } = await import('./runtime-home-service')
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the harness store implements the getSettings/updateSettings surface this service reads.
+    const service = new CodexRuntimeHomeService(store as never)
+    expect(service.isHostSystemDefaultSessionMigrationEligible()).toBe(eligible)
+    vi.unstubAllEnvs()
+  })
 })

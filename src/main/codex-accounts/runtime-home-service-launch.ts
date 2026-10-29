@@ -70,13 +70,14 @@ export abstract class CodexRuntimeHomeLaunch extends CodexRuntimeHomeRouting {
     syncSystemCodexResourcesIntoManagedHome()
     syncSystemConfigIntoManagedCodexHome()
     // Keep large history scans off the launch path.
-    const sourceHome = resolveHostCodexSessionSourceHome(this.store.getSettings())
-    // Reading a distro's history over 9P would boot it (E9); the WSL lane owns those homes.
     if (
       isCodexHistorySharedAcrossAccounts(this.store.getSettings()) &&
-      !(sourceHome && parseWslUncPath(sourceHome))
+      !this.hostHistorySourceIsInWsl()
     ) {
-      void startSystemCodexSessionBridgeInBackground({}, sourceHome)
+      void startSystemCodexSessionBridgeInBackground(
+        {},
+        resolveHostCodexSessionSourceHome(this.store.getSettings())
+      )
     }
     return this.getRuntimeHomePath()
   }
@@ -164,8 +165,15 @@ export abstract class CodexRuntimeHomeLaunch extends CodexRuntimeHomeRouting {
   isHostSystemDefaultSessionMigrationEligible(): boolean {
     return (
       normalizeCodexRuntimeSelection(this.store.getSettings()).host === null &&
-      !hasCustomCodexHomeOverrideForLaunch()
+      !hasCustomCodexHomeOverrideForLaunch() &&
+      !this.hostHistorySourceIsInWsl()
     )
+  }
+
+  // Reading a distro's history over 9P would boot it (E9); the WSL lane owns those homes.
+  private hostHistorySourceIsInWsl(): boolean {
+    const sourceHome = resolveHostCodexSessionSourceHome(this.store.getSettings())
+    return Boolean(sourceHome && parseWslUncPath(sourceHome))
   }
 
   prepareHostSystemDefaultSessionMigrationPass(
